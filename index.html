@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pro Expense Tracker</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #242424;
+            --bg-input: #333;
+            --text-primary: #e0e0e0;
+            --text-secondary: #444;
+            --border-color: #444;
+            --hover-bg: #333;
+            --button-bg: #0d47a1;
+            --delete-bg: #b71c1c;
+            --accent-color: #4caf50;
+        }
+
+        html.light-mode {
+            --bg-primary: #eef2f3;
+            --bg-secondary: white;
+            --bg-tertiary: #f8f9fa;
+            --bg-input: white;
+            --text-primary: #333;
+            --text-secondary: #ddd;
+            --border-color: #ddd;
+            --hover-bg: #fcfcfc;
+            --button-bg: #007bff;
+            --delete-bg: #dc3545;
+            --accent-color: #28a745;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 40px auto; background: var(--bg-primary); color: var(--text-primary); transition: background 0.3s, color 0.3s; }
+        .card { background: var(--bg-secondary); padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h2 { margin: 0; }
+        #themeToggle { padding: 8px 15px; background: var(--button-bg); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.3s; }
+        #themeToggle:hover { opacity: 0.9; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: var(--bg-tertiary); padding: 15px; border-radius: 8px; }
+        input, select { padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; flex: 1; background: var(--bg-input); color: var(--text-primary); transition: background 0.3s, color 0.3s, border-color 0.3s; }
+        button { background: var(--button-bg); color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: background 0.3s; }
+        button:hover { opacity: 0.9; }
+        button.delete { background: var(--delete-bg); padding: 5px 10px; font-size: 0.8em; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 15px; border-bottom: 1px solid var(--border-color); }
+        tr:hover { background: var(--hover-bg); }
+        .total-banner { font-size: 1.5em; color: var(--accent-color); font-weight: bold; text-align: right; margin-top: 20px; }
+        .category-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.9em; background: var(--bg-tertiary); color: var(--text-primary); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h2>📊 Expense Manager</h2>
+            <button id="themeToggle" onclick="toggleTheme()">🌙 Dark</button>
+        </div>
+        
+        <form action="/add" method="POST" class="controls">
+            <input type="text" id="itemInput" name="item" placeholder="What did you buy?" required>
+            <div id="categoryPrediction" style="display:none; padding: 8px; background: var(--accent-color); color: white; border-radius: 6px; font-size: 0.9em; cursor: pointer;" onclick="applySuggestion()">
+                Suggested: <span id="predictionText"></span> <span id="confidenceText"></span>
+            </div>
+            <input type="number" step="0.01" name="amount" placeholder="Amount (₹)" required>
+            <input type="text" id="categoryInput" name="category" placeholder="Category (e.g. Food, Gym)" required>
+            <input type="date" name="date" placeholder="Date (optional - uses today if blank)">
+            <button type="submit">Add Entry</button>
+        </form>
+
+        <hr>
+
+        <form action="/" method="GET" class="controls" style="background: none; padding: 0;">
+            <select name="category" onchange="this.form.submit()">
+                <option value="All">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}">{{ cat }}</option>
+                {% endfor %}
+            </select>
+            <select name="sort" onchange="this.form.submit()">
+                <option value="newest">Sort: Newest First</option>
+                <option value="high">Sort: High to Low</option>
+                <option value="low">Sort: Low to High</option>
+            </select>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Item</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for expense in expenses %}
+                <tr>
+                    <td>{{ expense.date }}</td>
+                    <td>{{ expense.item }}</td>
+                    <td><span class="category-badge">{{ expense.category }}</span></td>
+                    <td>₹{{ expense.amount }}</td>
+                    <td><a href="/delete/{{ expense.id }}" onclick="return confirm('Delete this?')"><button class="delete">🗑</button></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total-banner">Total: ₹{{ total }}</div>
+    </div>
+
+    <script>
+        let lastPrediction = null;
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.classList.toggle('light-mode', savedTheme === 'light');
+            updateThemeButton(savedTheme);
+        }
+
+        function toggleTheme() {
+            const isLight = document.documentElement.classList.contains('light-mode');
+            const newTheme = isLight ? 'dark' : 'light';
+            document.documentElement.classList.toggle('light-mode');
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+        }
+
+        function updateThemeButton(theme) {
+            const button = document.getElementById('themeToggle');
+            button.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+        }
+
+        // Predict category based on item input
+        document.getElementById('itemInput').addEventListener('input', async function() {
+            const itemValue = this.value.trim();
+            const predictionDiv = document.getElementById('categoryPrediction');
+            
+            if (itemValue.length < 2) {
+                predictionDiv.style.display = 'none';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ item: itemValue })
+                });
+                
+                const data = await response.json();
+                
+                if (data.category && data.confidence > 0.4) {
+                    lastPrediction = data.category;
+                    document.getElementById('predictionText').textContent = data.category;
+                    document.getElementById('confidenceText').textContent = `(${(data.confidence * 100).toFixed(0)}%)`;
+                    predictionDiv.style.display = 'block';
+                } else {
+                    predictionDiv.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error getting prediction:', error);
+            }
+        });
+
+        function applySuggestion() {
+            if (lastPrediction) {
+                document.getElementById('categoryInput').value = lastPrediction;
+                document.getElementById('categoryPrediction').style.display = 'none';
+            }
+        }
+
+        // Initialize theme on page load
+        initTheme();
+    </script>
+</body>
+</html>
