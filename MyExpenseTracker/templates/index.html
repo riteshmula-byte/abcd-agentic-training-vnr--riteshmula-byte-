@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pro Expense Tracker</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #242424;
+            --bg-input: #333;
+            --text-primary: #e0e0e0;
+            --text-secondary: #444;
+            --border-color: #444;
+            --hover-bg: #333;
+            --button-bg: #0d47a1;
+            --delete-bg: #b71c1c;
+            --accent-color: #4caf50;
+        }
+
+        html.light-mode {
+            --bg-primary: #eef2f3;
+            --bg-secondary: white;
+            --bg-tertiary: #f8f9fa;
+            --bg-input: white;
+            --text-primary: #333;
+            --text-secondary: #ddd;
+            --border-color: #ddd;
+            --hover-bg: #fcfcfc;
+            --button-bg: #007bff;
+            --delete-bg: #dc3545;
+            --accent-color: #28a745;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 40px auto; background: var(--bg-primary); color: var(--text-primary); transition: background 0.3s, color 0.3s; }
+        .card { background: var(--bg-secondary); padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h2 { margin: 0; }
+        #themeToggle { padding: 8px 15px; background: var(--button-bg); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.3s; }
+        
+        .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; background: var(--bg-tertiary); padding: 20px; border-radius: 8px; }
+        .input-group { display: flex; gap: 10px; flex-wrap: wrap; }
+        
+        input, select { padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; flex: 1; background: var(--bg-input); color: var(--text-primary); }
+        
+        #categoryPrediction { 
+            display: none; 
+            padding: 10px; 
+            background: var(--accent-color); 
+            color: white; 
+            border-radius: 6px; 
+            font-size: 0.9em; 
+            cursor: pointer;
+            text-align: center;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        button { background: var(--button-bg); color: white; border: none; padding: 12px 20px; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        button.delete { background: var(--delete-bg); padding: 5px 10px; font-size: 0.8em; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 15px; border-bottom: 1px solid var(--border-color); }
+        tr:hover { background: var(--hover-bg); }
+        
+        .total-banner { font-size: 1.5em; color: var(--accent-color); font-weight: bold; text-align: right; margin-top: 20px; }
+        .category-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.9em; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        
+        .ai-thinking { font-style: italic; font-size: 0.8em; color: #888; display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h2>📊 Expense Manager</h2>
+            <button id="themeToggle" onclick="toggleTheme()">☀️ Light</button>
+        </div>
+        
+        <form action="/add" method="POST" class="controls">
+            <div class="input-group">
+                <input type="text" id="itemInput" name="item" placeholder="What did you buy? (e.g. Netflix)" required autocomplete="off">
+                <input type="number" step="0.01" name="amount" placeholder="Amount (₹)" required>
+            </div>
+
+            <div id="aiStatus" class="ai-thinking">AI is thinking...</div>
+            <div id="categoryPrediction" onclick="applySuggestion()">
+                ✨ AI Suggestion: <strong id="predictionText"></strong> <span id="confidenceText"></span>
+                <br><small>(Click to apply)</small>
+            </div>
+
+            <div class="input-group">
+                <input type="text" id="categoryInput" name="category" placeholder="Category (e.g. Bills)" required>
+                <input type="date" name="date">
+            </div>
+            
+            <button type="submit">Add Entry</button>
+        </form>
+
+        <hr>
+
+        <form action="/" method="GET" class="input-group" style="margin-bottom: 20px;">
+            <select name="category" onchange="this.form.submit()">
+                <option value="All">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}" {% if request.args.get('category') == cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+            <select name="sort" onchange="this.form.submit()">
+                <option value="newest" {% if request.args.get('sort') == 'newest' %}selected{% endif %}>Newest First</option>
+                <option value="high" {% if request.args.get('sort') == 'high' %}selected{% endif %}>High to Low</option>
+                <option value="low" {% if request.args.get('sort') == 'low' %}selected{% endif %}>Low to High</option>
+            </select>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Item</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for expense in expenses %}
+                <tr>
+                    <td>{{ expense.date }}</td>
+                    <td>{{ expense.item }}</td>
+                    <td><span class="category-badge">{{ expense.category }}</span></td>
+                    <td>₹{{ expense.amount }}</td>
+                    <td><a href="/delete/{{ expense.id }}" onclick="return confirm('Delete this?')"><button class="delete">🗑</button></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total-banner">Total: ₹{{ total }}</div>
+    </div>
+
+    <script>
+        let lastPrediction = null;
+        let typingTimer;
+        const doneTypingInterval = 600; // Wait 600ms after user stops typing
+
+        // --- Theme Logic ---
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.classList.toggle('light-mode', savedTheme === 'light');
+            updateThemeButton(savedTheme);
+        }
+
+        function toggleTheme() {
+            const isLight = document.documentElement.classList.contains('light-mode');
+            const newTheme = isLight ? 'dark' : 'light';
+            document.documentElement.classList.toggle('light-mode');
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+        }
+
+        function updateThemeButton(theme) {
+            const button = document.getElementById('themeToggle');
+            button.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+        }
+
+        // --- AI Prediction Logic ---
+        const itemInput = document.getElementById('itemInput');
+        const aiStatus = document.getElementById('aiStatus');
+        const predictionDiv = document.getElementById('categoryPrediction');
+
+        itemInput.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            predictionDiv.style.display = 'none';
+            
+            if (itemInput.value.trim().length >= 3) {
+                typingTimer = setTimeout(performPrediction, doneTypingInterval);
+            }
+        });
+
+        async function performPrediction() {
+            const itemValue = itemInput.value.trim();
+            aiStatus.style.display = 'block';
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item: itemValue })
+                });
+                
+                const data = await response.json();
+                aiStatus.style.display = 'none';
+                
+                if (data.category) {
+                    lastPrediction = data.category;
+                    document.getElementById('predictionText').textContent = data.category;
+                    document.getElementById('confidenceText').textContent = `(${(data.confidence * 100).toFixed(0)}%)`;
+                    predictionDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Prediction error:', error);
+                aiStatus.style.display = 'none';
+            }
+        }
+
+        function applySuggestion() {
+            if (lastPrediction) {
+                document.getElementById('categoryInput').value = lastPrediction;
+                predictionDiv.style.display = 'none';
+                // Focus the amount field next for better UX
+                document.getElementsByName('amount')[0].focus();
+            }
+        }
+
+        initTheme();
+    </script>
+</body>
+</html>
